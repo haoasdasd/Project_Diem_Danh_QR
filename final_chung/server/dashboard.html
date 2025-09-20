@@ -1,0 +1,249 @@
+<!DOCTYPE html>
+<html lang="vi">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0"/>
+  <title>Quản lý điểm danh & Client</title>
+  <style>
+    body { font-family: Arial, sans-serif; margin: 20px; }
+    table { width: 100%; border-collapse: collapse; margin-top: 20px; }
+    th, td { border: 1px solid #ccc; padding: 8px; text-align: center; }
+    th { background-color: #f4f4f4; }
+    input, button { padding: 5px; margin: 3px; }
+    .section { margin-bottom: 40px; }
+    .highlight { background-color: #e3ffe3; }
+    .toast {
+      position: fixed;
+      bottom: 20px;
+      right: 20px;
+      background-color: #333;
+      color: white;
+      padding: 10px 20px;
+      border-radius: 5px;
+      opacity: 0.9;
+      z-index: 999;
+      animation: fadeInOut 3s ease-in-out forwards;
+    }
+    pre#logOutput {
+      background: #f9f9f9;
+      padding: 10px;
+      border: 1px solid #ccc;
+      max-height: 300px;
+      overflow: auto;
+      white-space: pre-wrap;
+      margin-top: 10px;
+    }
+    @keyframes fadeInOut {
+      0% { opacity: 0; transform: translateY(20px); }
+      10% { opacity: 0.9; transform: translateY(0); }
+      90% { opacity: 0.9; transform: translateY(0); }
+      100% { opacity: 0; transform: translateY(20px); }
+    }
+  </style>
+</head>
+<body>
+  <h1>📋 Quản lý điểm danh</h1>
+  <div class="section">
+    <button onclick="loadExcel()"> Danh sách</button>
+    <button onclick="location.reload()">Tải lại giao diện</button>
+    <button onclick="loadQRLog()">📄 Hiển thị QR log</button>
+    <button onclick="loadDisplayLog()">📄 Hiển thị Display log</button>
+
+    <pre id="logOutput">(Chưa có nội dung hiển thị)</pre>
+
+    <table id="excelTable">
+      <thead>
+        <tr>
+          <th>STT</th><th>Tên</th><th>Giới Tính</th><th>Chức Vụ</th><th>Đơn Vị</th><th>Loại ĐB</th><th>Thời Gian</th><th>Thao tác</th>
+        </tr>
+      </thead>
+      <tbody></tbody>
+    </table>
+
+    <h3>➕ Thêm người điểm danh</h3>
+    <input placeholder="Tên" id="ten">
+    <input placeholder="Giới tính" id="gt">
+    <input placeholder="Chức vụ" id="cv">
+    <input placeholder="Đơn vị" id="dv">
+    <input placeholder="Loại ĐB" id="ldb">
+    <button onclick="addRow()">Thêm</button>
+  </div>
+
+  <h1>💻 Duyệt kết nối Client</h1>
+  <div class="section">
+    <button onclick="loadClients()">Làm mới danh sách client</button>
+    <ul id="clientList"></ul>
+  </div>
+
+  <script>
+    function showToast(message, color = "#333") {
+      const toast = document.createElement("div");
+      toast.className = "toast";
+      toast.style.backgroundColor = color;
+      toast.innerText = message;
+      document.body.appendChild(toast);
+      setTimeout(() => document.body.removeChild(toast), 3000);
+    }
+
+    async function loadExcel() {
+      try {
+        const res = await fetch('/get_excel');
+        const data = await res.json();
+        const tbody = document.querySelector('#excelTable tbody');
+        tbody.innerHTML = '';
+        data.forEach(row => {
+          const tr = document.createElement('tr');
+          row.forEach((cell, idx) => {
+            const td = document.createElement('td');
+            if (idx === 0 || idx === 6) td.textContent = cell;
+            else td.innerHTML = `<input value="${cell}" onchange="updateRow(${row[0]}, ${idx}, this.value)">`;
+            tr.appendChild(td);
+          });
+          const tdDel = document.createElement('td');
+          tdDel.innerHTML = `<button onclick="deleteRow(${row[0]})">🗑️ Xoá</button>`;
+          tr.appendChild(tdDel);
+          tbody.appendChild(tr);
+        });
+      } catch {
+        showToast("❌ Lỗi tải dữ liệu Excel", "crimson");
+        console.log("[!] Không thể tải dữ liệu Excel");
+      }
+    }
+
+    async function updateRow(stt, col, value) {
+      await fetch('/update_excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stt, col, value })
+      });
+      showToast("✅ Đã cập nhật");
+      console.log(`[=] Đã cập nhật dòng ${stt}, cột ${col}`);
+    }
+
+    async function deleteRow(stt) {
+      await fetch('/delete_excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stt })
+      });
+      loadExcel();
+      showToast("🗑️ Đã xoá");
+      console.log(`[-] Đã xoá dòng STT ${stt}`);
+    }
+
+    async function addRow() {
+      const body = {
+        ten: document.getElementById('ten').value,
+        gioi_tinh: document.getElementById('gt').value,
+        chuc_vu: document.getElementById('cv').value,
+        don_vi: document.getElementById('dv').value,
+        loai_db: document.getElementById('ldb').value,
+      };
+      await fetch('/add_excel', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(body)
+      });
+      loadExcel();
+      showToast("✅ Đã thêm");
+      console.log(`[+] Đã thêm người: ${body.ten}`);
+    }
+
+    async function loadClients() {
+      try {
+        const res = await fetch('/get_clients');
+        const data = await res.json();
+        const ul = document.getElementById('clientList');
+        ul.innerHTML = '';
+        data.pending.forEach(ip => {
+          const li = document.createElement('li');
+          li.innerHTML = `${ip} - <button onclick="approve('${ip}')">✅ Duyệt</button> <button onclick="deny('${ip}')">❌ Từ chối</button>`;
+          ul.appendChild(li);
+        });
+        data.allowed.forEach(ip => {
+          const li = document.createElement('li');
+          li.innerHTML = `${ip} - <button onclick="disconnect('${ip}')">🔌 Ngắt kết nối</button>`;
+          li.classList.add("highlight");
+          ul.appendChild(li);
+        });
+      } catch {
+        showToast("❌ Lỗi tải client", "crimson");
+        console.log("[!] Không thể tải danh sách client");
+      }
+    }
+
+    async function approve(ip) {
+      await fetch('/approve_client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip })
+      });
+      loadClients();
+      showToast(`✅ Đã duyệt ${ip}`);
+    }
+
+    async function deny(ip) {
+      await fetch('/deny_client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip })
+      });
+      loadClients();
+      showToast(`🚫 Đã từ chối ${ip}`, "#ff4444");
+    }
+
+    async function disconnect(ip) {
+      await fetch('/disconnect_client', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ip })
+      });
+      loadClients();
+      showToast(`🔌 Đã ngắt kết nối ${ip}`);
+    }
+
+    async function loadQRLog() {
+      try {
+        const res = await fetch('/get_qr_log');
+        const data = await res.json();
+        if (data.status === "ok") {
+          document.getElementById('logOutput').textContent = data.lines.join("");
+          showToast("✅ Đã tải QR log");
+        } else {
+          throw new Error(data.message);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi khi tải QR log", "crimson");
+        console.error("[!] QR log error:", e);
+      }
+    }
+
+    async function loadDisplayLog() {
+      try {
+        const res = await fetch('/get_display_log');
+        const data = await res.json();
+        if (data.status === "ok") {
+          document.getElementById('logOutput').textContent = data.lines.join("");
+          showToast("✅ Đã tải Display log");
+        } else {
+          throw new Error(data.message);
+        }
+      } catch (e) {
+        showToast("❌ Lỗi khi tải display log", "crimson");
+        console.error("[!] Display log error:", e);
+      }
+    }
+
+    const ws = new WebSocket(`ws://${location.hostname}:8000/ws`);
+    ws.onmessage = (event) => {
+      showToast(event.data, "#2196f3");
+      console.log("[WS] Nhận:", event.data);
+    };
+
+    window.onload = () => {
+      loadExcel();
+      loadClients();
+    };
+  </script>
+</body>
+</html>
